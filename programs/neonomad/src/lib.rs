@@ -1,8 +1,29 @@
+//[Medium-issue 1] Usage of unaudited framework.
+    //Anchor is well known and powerful sealevel framework for solana
+    //Removing this framework means 
+    //newly writing the whole smart contract project from scratch with new archtecture
+    //Also it takes much more time and energy.
+    //We ignored this issue.
+
 use anchor_lang::prelude::*;
+
+//[Medium-issue 2] Yanked package version.
+    // As the Ancor is developing continuously, there is no stable or validated version.
+    // All the old versions are marked as yanked.
+    // The only thing we could consider was to use recent version - v0.24.2, but it will soon be yanked in a month.
+    // We tried updating to v 0.24.2, but there were so many errors in the project. 
+    // We managed to correct them, but it is not guarenteed successful function.
+    // However, there are no proved vulnerables in the v0.16.2 so as not to be used.
+    // At the bottom we concluded to ignore this.
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::mem::size_of;
+
+//[Medium-issue 3] Unsafe rust code.
+    // We reviewed the source code of anchor-attribute-access-control package, 
+    // but there were no unsafe code used.
+    // so we ignore this.
 
 declare_id!("GfXYYi5TFPG5ixdfiXLQacgjZbatqpb9uZZPMTBxMVCx");
 
@@ -78,6 +99,18 @@ pub mod neonomad_staking {
         msg!("updated pool");
         Ok(())
     }
+
+// [medium 4] is using unsafe property - ctx.remaining_accounts.
+    // In this project, it's inevitable using _ctx.remaining_accounts directly.
+    // remaining_accounts is a default field in context structure of anchor account.
+    // It is not deserialized or validated, so Anchor community recommend to use cafefully.
+    // this property is dangerous.
+    // So we got _ctx.remaining_accounts.iter() into a variable and deserialized it into
+    // <FarmPoolAccount>. 
+    // And also restricted the account with program account's authority.
+    //(we inspected the every functions using remaining_account and checked all)
+    // So this issue was fixed clearly.
+
 
     pub fn change_tokens_per_second(
         _ctx: Context<ChangeTokensPerSecond>,
@@ -383,6 +416,9 @@ pub struct CreateState<'info> {
     pub reward_vault: Account<'info, TokenAccount>,
     pub reward_mint: Box<Account<'info, Mint>>,
     pub authority: Signer<'info>,
+
+//[High-issue 1] Insufficient system type
+    //Fixed the field type as below and solved the issue. 
     pub system_program: Program<'info, System>,
     #[account(constraint = token_program.key == &token::ID)]
     pub token_program: Program<'info, Token>,
@@ -589,6 +625,8 @@ pub struct DurationExtraRewardConfig {
     extra_percentage: u64, // decimals 9, MAX = 100_000_000_000
 }
 
+//[Low-issue 2] Extra unused lifetimes.
+    //Removed <'info> lifetimes from 'fn validate' and 'fn validate_lock_duration', calculate_reward_amount, etc
 impl ExtraRewardsAccount {
     fn validate(&mut self) -> Result<()> {
         if self.configs.len() > 1 {
@@ -614,15 +652,19 @@ impl ExtraRewardsAccount {
         }
         Err(ErrorCode::InvalidLockDuration.into())
     }
+//[Low-issue 1] Unneeded 'return' statement.
+    //Fixed isssue.
     fn get_extra_reward_percentage(&mut self, lock_duration: &i64) -> u64 {
         let reversed_configs: Vec<DurationExtraRewardConfig> =
             self.configs.iter().rev().cloned().collect();
+        
+        let mut result_percentage: u64 = 0;
         for tier in reversed_configs.iter() {
             if *lock_duration >= tier.duration {
-                return tier.extra_percentage;
+                result_percentage = tier.extra_percentage;
             }
         }
-        return 0;
+        return result_percentage;
     }
 }
 
@@ -697,11 +739,14 @@ pub struct FarmUserEtherAddress {
 }
 
 impl FarmPoolUserAccount {
-    fn calculate_reward_amount<'info>(
+    fn calculate_reward_amount(
         &mut self,
         pool: &FarmPoolAccount,
         extra_percentage: &u64,
     ) -> Result<()> {
+
+//[Low-issue 3] Redundant code.
+    //Fixed isssue.        
         let pending_amount: u128 = u128::from(self.amount)
             .checked_mul(pool.acc_reward_per_share)
             .unwrap()
@@ -710,6 +755,8 @@ impl FarmPoolUserAccount {
             .checked_sub(self.reward_debt)
             .unwrap();
         self.reward_amount = self.reward_amount.checked_add(pending_amount).unwrap();
+//[Low-issue 4] Redundant code.
+    //Fixed isssue.         
         let extra_amount: u128 = pending_amount
             .checked_mul(u128::from(*extra_percentage))
             .unwrap()
@@ -718,6 +765,9 @@ impl FarmPoolUserAccount {
         self.extra_reward = self.extra_reward.checked_add(extra_amount).unwrap();
         Ok(())
     }
+
+//[Low-issue 5] Extra unused lifetime.
+    //Fixed isssue.     
     fn calculate_reward_debt(&mut self, pool: &FarmPoolAccount) -> Result<()> {
 
         // msg!("amount {}", self.amount);
